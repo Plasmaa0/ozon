@@ -1,15 +1,20 @@
-import os
-import gc #garbage collector
-import sys
-import json
-import time
-import random
-import openpyxl
-import traceback
-from bs4 import BeautifulSoup, FeatureNotFound
-from selenium import webdriver
-from fake_useragent import UserAgent
-from concurrent.futures import ThreadPoolExecutor
+try:
+    import os
+    import gc #garbage collector
+    import sys
+    import json
+    import time
+    import random
+    import openpyxl
+    import traceback
+    from pprint import pprint
+    from bs4 import BeautifulSoup
+    from selenium import webdriver
+    from fake_useragent import UserAgent
+    from concurrent.futures import ThreadPoolExecutor
+except:
+    print('Modules not found.')
+    exit(0)
 
 '''
 TODO 1: wrap crawler, parser results in dataclasses
@@ -70,6 +75,8 @@ class Scraper:
         self.__log('Closing Scraper', 3)
         self.__log('Closing processes', 3)
         self.__closeprocesses()
+        self.__log('Running Garbage Collector', 3)
+        gc.collect()
         self.__log('Detaching logfile', 3)
         self.__log('Finished', 3)
         self.__logfile.close()
@@ -99,9 +106,12 @@ class Scraper:
             options.add_argument('--log-level=3')
             options.add_argument('--disable-extensions')
             options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            # options.add_argument('--no-sandbox')
+            options.add_argument('--no-sandbox')
             options.headless = True
-            session = webdriver.Chrome(r'/chromedriver.exe', options=options)
+            try:
+                session = webdriver.Chrome(r'/usr/bin/chromedriver', options=options)
+            except:
+                session = webdriver.Chrome(r'/usr/local/bin/chromedriver', options=options)
             self.__log('Successfully got session', 0)
             return session
         except Exception as e:
@@ -187,12 +197,11 @@ class Scraper:
             deltatime = time.time()-t1
             result = {
                 'id': id_,
-                'url': url,
                 'markup': response,
-                'log': {
-                    'messages': log,
-                    'time': round(deltatime, 2)
-                },
+                # 'log': {
+                #     'messages': log,
+                #     'time': round(deltatime, 2)
+                # },
                 'status': status
             }
             self.__log('ID {} crawled in {} seconds. Status: {}'.format(self.__pr(id_, 8), self.__pr(round(deltatime,2), 6), status), 4 if status==self.__failurestatus else 1)
@@ -207,7 +216,7 @@ class Scraper:
         '''
         try:
             t1 = time.time()
-            url = inputs['url']
+            url = self.__id2url(inputs['id'])
             name = None
             shopId = inputs['id']
             subscribers = None
@@ -382,6 +391,7 @@ class Scraper:
                 data = list(executor.map(self.__parse, markups))
                 self.dataset+=data
                 executor.shutdown(True)
+                self.__log('sleeping 5 sec', 1)
                 time.sleep(5)
                 self.__closeprocesses()
         except Exception as e:
@@ -496,7 +506,7 @@ class Scraper:
                 time.sleep(1)
                 # self.__handle(part)
                 subnames = self.save(True, self.__save_xlsx, part[0], part[-1], tmp=True)
-                self.__log('scraped {} %'.format(round(((k+1)*100/parts), 2)), 2)
+                self.__log('scraped {} %'.format((k+1)*100/parts), 2)
                 json_name, xlsx_name = subnames
                 json_names.append(json_name)
                 xlsx_names.append(xlsx_name)
@@ -647,6 +657,7 @@ class Program:
             print('Warning.\nYou\'re yousing python version:\n', sys.version, '\nand expected is 3.4.3')
         if not 'chromedriver.exe' in d[0][2]:
             print('no chromedriver found!!!!!!!!\n'*3)
+            # raise FileNotFoundError
         if not ('stats.json' in d[0][2]):
             print('no "stats.json" found. recommended to run Test before scraping.')
         try:
@@ -664,6 +675,7 @@ class Program:
                     time.sleep(1)
                 time.sleep(1)
                 result = future.result()
+                future.cancel()
                 # result = func(self)
                 return result
             except Exception as err:
@@ -919,20 +931,27 @@ class Program:
             save_json=False
             mode = 'insertion'
         setup = {
-            'start': a,
-            'end': b,
-            'delta': b-a,
-            'tmp save size': saveper,
-            'max request attempts': maxattempts,
-            'max threads': max_thr,
-            'JSON save': save_json,
-            'XLSX save': save_xlsx,
-            'mode': mode
+            'setup': {
+                'indexes': {
+                    'start': a,
+                    'end': b,
+                    'delta': b-a
+                },
+                'max request attempts': maxattempts,
+                'max threads': max_thr,
+                'save': {
+                    'JSON save': save_json,
+                    'XLSX save': save_xlsx,
+                    'mode': mode,
+                    'tmp save size': saveper
+                }
+            }
         }
         scr = Scraper(mode, max_threads=max_thr, save_xlsx=save_xlsx, save_json=save_json, saveper=saveper, maxattempts=maxattempts)
         n = (1 + b - a)*self.getavgtime()
         exp = scr.timeConvert(n)
-        if input('Setup: {}\nExpecting time: {}. Start? (y/n): '.format(setup, exp)) == 'y':
+        pprint(setup, indent=2, compact=True, )
+        if input('Expecting time: {}. Start? (y/n): '.format(exp)) == 'y':
             time.sleep(2)
             setup['started at'] = time.ctime()
             setup['expecting time'] = exp
@@ -965,6 +984,8 @@ def main():
     print('Choose your tool !\n')
     choice = input('0.Exit\n1. Scraper\n2. Compile tmp files together\n3. Find failures\n4. Test connection (check what is average speed for parsing 1 page)\n5. Test color support\n6. Delete logs\n')
     if choice == '0':
+        gc.collect()
+        del prog
         return 1
     elif choice == '1':
         prog.setup()
@@ -978,7 +999,6 @@ def main():
         prog.testcolor()
     elif choice == '6':
         prog.clearlogs()
-    del prog
     gc.collect()
     del prog
     return 0
@@ -989,6 +1009,7 @@ if __name__ == '__main__':
         while future.running():
             time.sleep(1)
         time.sleep(1)
-        if future.result == 1:
+        if future.result() == 1:
             break
         print('\n')
+#

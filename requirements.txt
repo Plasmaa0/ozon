@@ -6,7 +6,6 @@ et-xmlfile==1.0.1
 fake-useragent==0.1.11
 idna==2.8
 jdcal==1.4.1
-lxml==4.3.1
 openpyxl==2.5.14
 PySocks==1.7.1
 requests==2.21.0
