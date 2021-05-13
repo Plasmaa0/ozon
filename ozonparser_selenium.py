@@ -1,12 +1,13 @@
 try:
     import os
-    import gc #garbage collector
+    import gc
     import sys
     import json
     import time
     import random
     import openpyxl
     import traceback
+    import tracemalloc
     from pprint import pprint
     from bs4 import BeautifulSoup
     from selenium import webdriver
@@ -17,10 +18,7 @@ except:
     exit(0)
 
 '''
-TODO 1: wrap crawler, parser results in dataclasses
-#from dataclasses import dataclass
-
-TODO 2: make Scraper.__log() to be a decorator to catch and log exceptions
+TODO: make Scraper.__log() to be a decorator to catch and log exceptions
 '''
 
 class Scraper:
@@ -41,6 +39,7 @@ class Scraper:
             5 - CRITICAL\n
         @logcolor - if your terminal supports colored output.
         '''
+        # tracemalloc.start()
         self.mode = mode
         self.__max_threads = max_threads
         self.__save_json = save_json
@@ -76,9 +75,14 @@ class Scraper:
         self.__log('Closing processes', 3)
         self.__closeprocesses()
         self.__log('Running Garbage Collector', 3)
-        gc.collect()
+        gc.collect(generation=2)
         self.__log('Detaching logfile', 3)
         self.__log('Finished', 3)
+        # snap = tracemalloc.take_snapshot()
+        # top_stats = snap.statistics('lineno')
+        # print("[ Top 10 ]")
+        # for stat in top_stats[:10]:
+        #     self.__log(str(stat), 5)
         self.__logfile.close()
         
     def __closeprocesses(self) -> None:
@@ -106,16 +110,17 @@ class Scraper:
             options.add_argument('--log-level=3')
             options.add_argument('--disable-extensions')
             options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            options.add_argument('--no-sandbox')
+            # options.add_argument('--no-sandbox')
             options.headless = True
             try:
-                session = webdriver.Chrome(r'/usr/bin/chromedriver', options=options)
+                session = webdriver.Chrome(r'chromedriver.exe', options=options)
             except:
-                session = webdriver.Chrome(r'/usr/local/bin/chromedriver', options=options)
+                session = webdriver.Chrome(r'/scraper_main/chromedriver', options=options)
             self.__log('Successfully got session', 0)
             return session
         except Exception as e:
             self.__log('Error in __getsession.' + str(e.args), 5)
+            return 0
 
     def __id2url(self, id_: int) -> str:
         '''
@@ -142,23 +147,24 @@ class Scraper:
         '''
         Crawls page with given id
         '''
+        def failuremessage(t1, t2, log, status):
+            deltatime = t2-t1
+            self.__log(str(['crawler', id_, log]), -1)
+            self.__log('ID {} crawled in {} seconds. Status: {}'.format(self.__pr(id_, 8), self.__pr(round(deltatime,2), 6), status), 4)
+            return {
+                'id': id_,
+                'url': self.__id2url(id_),
+                'log': {
+                    'messages': log,
+                    'time': round(deltatime, 2)
+                },
+                'status': status
+                }
+        t1 = time.time()
+        log = []
         try:
             session = self.__getsession()
-            def failuremessage(t1, t2, log, status):
-                deltatime = t2-t1
-                self.__log(str(['crawler', id_, log]), -1)
-                self.__log('ID {} crawled in {} seconds. Status: {}'.format(self.__pr(id_, 8), self.__pr(round(deltatime,2), 6), status), 4)
-                return {
-                    'id': id_,
-                    'url': self.__id2url(id_),
-                    'log': {
-                        'messages': log,
-                        'time': round(deltatime, 2)
-                    },
-                    'status': status
-                    }
-            t1 = time.time()
-            log = []
+            assert session != 0
             url = self.__id2url(id_)
             status = None
             attempts = 0
@@ -209,6 +215,7 @@ class Scraper:
             return result
         except Exception as e:
             self.__log('Error in __crawl().' + str(e.args), 5)
+            return failuremessage(t1, time.time(), log, self.__failurestatus)
 
     def __parse(self, inputs: dict) -> dict:
         '''
@@ -276,6 +283,7 @@ class Scraper:
                                         name = (title.text.split('товары ')[1].split(' на')[0])
                                     except:
                                         log.append('NameNotFound')
+                                        log.append(title)
                                         status = self.__failurestatus
                                     else:
                                         log.append('FoundName')
@@ -488,7 +496,7 @@ class Scraper:
                 indexes = definedIndexes
                 mode = self.mode
             else:
-                indexes = [i for i in range(a,b+1)]
+                indexes = [i for i in range(a,b)]
                 mode = self.mode
             subindexes = list(self.__list2parts(indexes, self.__saveper))
             self.__log('working', 2)
@@ -506,7 +514,7 @@ class Scraper:
                 time.sleep(1)
                 # self.__handle(part)
                 subnames = self.save(True, self.__save_xlsx, part[0], part[-1], tmp=True)
-                self.__log('scraped {} %'.format((k+1)*100/parts), 2)
+                self.__log('scraped {} %'.format(round((k+1)*100/parts, 2)), 2)
                 json_name, xlsx_name = subnames
                 json_names.append(json_name)
                 xlsx_names.append(xlsx_name)
@@ -514,7 +522,9 @@ class Scraper:
                 self.dataset.clear()
                 gc.collect()
                 time.sleep(2)
-                
+            
+            del indexes
+            del subindexes
             self.__log('saving', 2)
             names = json_names + xlsx_names
             for name in json_names:
@@ -685,6 +695,7 @@ class Program:
                 finally:
                     traceback.print_exception(*exc_info)
                     print(err.args)
+                    gc.collect()
                     del exc_info
             finally:
                 print('Closing tool: {}.'.format(func.__name__))
@@ -980,6 +991,7 @@ class Program:
                     f.close()
 
 def main():
+    gc.set_threshold(1000,500,500)
     prog = Program()
     print('Choose your tool !\n')
     choice = input('0.Exit\n1. Scraper\n2. Compile tmp files together\n3. Find failures\n4. Test connection (check what is average speed for parsing 1 page)\n5. Test color support\n6. Delete logs\n')
@@ -1005,11 +1017,13 @@ def main():
 
 if __name__ == '__main__':
     while True:
-        future = ThreadPoolExecutor(max_workers=1).submit(main)
-        while future.running():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(main)
+            while future.running():
+                time.sleep(1)
             time.sleep(1)
-        time.sleep(1)
-        if future.result() == 1:
-            break
+            if future.result() != 0:
+                executor.shutdown()
+                break
         print('\n')
 #

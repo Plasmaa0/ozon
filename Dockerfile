@@ -1,55 +1,59 @@
-FROM python:3.8
+FROM ubuntu
 
 WORKDIR /scraper_main
 
+
+#загрузка основных файлов в директорию
 ADD ozonparser_selenium.py .
-
-ADD chromedriver.exe .
-
-RUN mv chromedriver.exe /usr/local/bin
 
 ADD requirements.txt .
 
+RUN bash
+
+# обновление пакетов
 RUN apt-get upgrade
 
 RUN apt-get update
 
-RUN apt-get install -y libxss1
+RUN apt-get install sudo
 
-RUN apt-get install -y libappindicator1
+RUN sudo apt-get install wget -y
 
-RUN apt-get install -y libindicator7
 
-RUN apt-get install -y fonts-liberation
+# установка питона
+RUN sudo apt-get install -y python3-pip
 
-RUN apt-get install -y libasound2
 
-RUN apt-get install -y libatk-bridge2.0-0
+# установка требуемых зависимостей
+RUN pip3 install -r requirements.txt
 
-RUN apt-get install -y libatspi2.0-0
 
-RUN apt-get install -y libdrm2
+# загрузка и распаковка архива с драйвером
+RUN sudo apt-get install unzip
 
-RUN apt-get install -y libgbm1
+RUN sudo wget https://chromedriver.storage.googleapis.com/90.0.4430.24/chromedriver_linux64.zip
 
-RUN apt-get install -y libgtk-3-0
+RUN unzip chromedriver_linux64.zip
 
-RUN apt-get install -y libnspr4
 
-RUN apt-get install -y libnss3
+# загрузка браузера, его установка, установка его зависимостей
+RUN sudo wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 
-RUN apt-get install -y libxkbcommon0
 
-RUN apt-get install -y libxshmfence1
 
-RUN apt-get install -y xdg-utils
+# удаление загруженных ненужностей
+RUN rm chromedriver_linux64.zip
 
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+RUN sudo apt-get remove unzip -y
 
-RUN dpkg -i google-chrome*.deb
 
-RUN apt-get install -y -f
 
-RUN pip install -r requirements.txt
+# RUN sudo dpkg -i --force-all google-chrome*.deb 
 
-CMD [ "python", "ozonparser_selenium.py" ]
+# RUN sudo apt install -y -f ##во время установки попросит ввести часовой пояс
+
+# RUN rm google-chrome-stable_current_amd64.deb
+
+
+# далее нужно изменить путь к драйверу внутри
+# файла программы на путь новому драйверу
